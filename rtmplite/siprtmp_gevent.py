@@ -40,14 +40,14 @@ import os, sys, traceback, time, struct, socket, random, amf, hashlib, hmac, ran
 from struct import pack, unpack
 from rtmp import Header, Message, Command, App, getfilename, Protocol, FLV as baseFLV
 
-#try:
-from p2psip.std import rfc3261, rfc3264, rfc3550, rfc2396, rfc4566, rfc2833, kutil
-from p2psip.app.voip import MediaSession
-from siprtmp import MediaContext
-sip = True
-#except:
-#    print 'warning: disabling SIP. To enable please include p2p-sip src directory in your PYTHONPATH before starting this application'
- #   sip = False
+try:
+    from std import rfc3261, rfc3264, rfc3550, rfc2396, rfc4566, rfc2833, kutil
+    from app.voip import MediaSession
+    from siprtmp import MediaContext
+    sip = True
+except:
+    print 'warning: disabling SIP. To enable please include p2p-sip src directory in your PYTHONPATH before starting this application'
+    sip = False
     # sys.exit(1)
 
 try: import audiospeex, audioop
@@ -302,7 +302,7 @@ class FlashClient(object):
         else: # this has   to be a message on the stream
             assert msg.streamId != 0
             assert msg.streamId in self.streams
-            if _debug: print self.streams[msg.streamId], 'recv'
+            # if _debug: print self.streams[msg.streamId], 'recv'
             stream = self.streams[msg.streamId]
             if not stream.client: stream.client = self
             if msg.type == Message.RPC or msg.type == Message.RPC3:
@@ -1195,25 +1195,12 @@ class Context(object):
                     except: dest = rfc2396.Address(self.user.address.uri.scheme + ':' + dest) # otherwise scheme is picked from registered URI
                     if _debug: print '  create media context'
                     media = MediaContext(self, None, self.client.server.int_ip, self._preferred, rfc3550.gevent_Network, *args) # create a media context for the call
-                    early_media = False
                     try:
                         self._connectTask = gevent.spawn(self.user.connect, dest, sdp=media.session.mysdp, provisional=True)
                         session, reason = self._connectTask.get()
                         if _debug: print '  session=', session, 'reason=', reason
                         while reason is not None and reason.partition(" ")[0] in ('180', '183'):
-                            if session[3]:
-                                early_media = True
-                                media.session.setRemote(session[3])
-                                # Using accepted will build a two way stream
-                                #  and the stream from the broswer will expect
-                                #  self.media.  Additionally, this will cause a
-                                #  bye instead of a cancel.  A better way to fix
-                                #  this would be to use a param on ringing and
-                                #  modify the flash client
-                                self.media = media
-                                self.client.call('accepted')
-                            else:
-                                self.client.call('ringing', reason)
+                            self.client.call('ringing', reason)
                             self._connectTask = gevent.spawn(self.user.continueConnect, session, provisional=True)
                             session, reason = self._connectTask.get()
                     except:
@@ -1222,11 +1209,8 @@ class Context(object):
                         else: raise StopIteration(None) # else call was cancelled in another task
                     self._connectTask = None # because the generator returned, and no more pending outgoing call
                     if session: # call connected
-                        if early_media:
-                            self.session, session.media = session, media.session
-                        else:
-                            self.media, self.session, session.media = media, session, media.session
-                            self.media.session.setRemote(session.yoursdp)
+                        self.media, self.session, session.media = media, session, media.session
+                        self.media.session.setRemote(session.yoursdp)
                         self._sessionHandlerTask = gevent.spawn(self._sessionHandler) # receive more requests from SIP
                         codecs = self.media.accepting()
                         if _debug: print 'sip-accepted %r'%(codecs,)
@@ -1575,11 +1559,9 @@ if __name__ == '__main__':
     import rtmp
     rtmp._debug = options.verbose_all
     if sip:
-        import siprtmp
-        from p2psip.app import voip
-        from p2psip.std import rfc3550, rfc3261
-        siprtmp._debug = rfc3261._debug = options.verbose_all
-        voip._debug = options.verbose or options.verbose_all
+        import siprtmp, app.voip, std.rfc3550, std.rfc3261
+        siprtmp._debug = std.rfc3261._debug = options.verbose_all
+        app.voip._debug = options.verbose or options.verbose_all
     _debug = options.verbose or options.verbose_all
     _debugAll = options.verbose_all
 
